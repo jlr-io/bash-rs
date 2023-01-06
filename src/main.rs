@@ -1,5 +1,8 @@
-use clap::{Parser};
-use std::{path::{self, PathBuf}, fs, error, fmt};
+use clap::Parser;
+use std::{
+    error, fmt, fs,
+    path::{self, PathBuf},
+};
 
 #[derive(Parser)]
 struct Cli {
@@ -7,8 +10,10 @@ struct Cli {
     cmd: String,
     #[clap(short, long)]
     all: bool,
+		#[clap(short, long)]
+		time: bool,
     // #[clap(parse(from_os_str))]
-    path: Option<path::PathBuf>
+    path: Option<path::PathBuf>,
 }
 
 #[derive(Debug)]
@@ -31,17 +36,17 @@ fn main() {
 
     let path = match args.path {
         Some(path) => path,
-        None => PathBuf::from(".")
+        None => PathBuf::from("."),
     };
 
     let result = match args.cmd.as_str() {
-        "ls" => ls(path),
-        _ => invalid_cmd(args.cmd)
+        "ls" => ls(path, args.all, args.time),
+        _ => invalid_cmd(args.cmd),
     };
 
     match result {
         Ok(val) => println!("{}", val),
-        Err(error) => println!("{}", error)
+        Err(error) => println!("{}", error),
     };
 }
 
@@ -49,7 +54,7 @@ fn main() {
 // -a -> hidden files
 
 // implementation of the linux `ls` command.
-fn ls(path: path::PathBuf) -> Result<String, Box<dyn error::Error>> {
+fn ls(path: path::PathBuf, all: bool, time: bool) -> Result<String, Box<dyn error::Error>> {
     let metadata = fs::metadata(&path)?;
 
     if metadata.is_file() {
@@ -57,16 +62,28 @@ fn ls(path: path::PathBuf) -> Result<String, Box<dyn error::Error>> {
     }
 
     let dir = fs::read_dir(&path)?;
-    let mut file_names = "".to_owned();
+
+    let mut file_names: Vec<String> = Vec::new();
 
     for file in dir {
         let file_name = file.unwrap().file_name().into_string().unwrap();
-        if !file_name.starts_with(".") {
-            file_names = [file_names, file_name].join(" ");
+
+        if all || !file_name.starts_with(".") {
+            file_names.push(file_name);
         }
     }
 
-    Ok(file_names)
+    // sort by date modified
+		// if time {
+		// 	file_names.sort_by()
+		// }
+    file_names.sort();
+
+    // create a String to return
+    let mut ls_result: String = "".to_owned();
+    for file_name in file_names {
+        ls_result = [ls_result, file_name].join(" ");
+    }
+
+    Ok(ls_result)
 }
-
-
