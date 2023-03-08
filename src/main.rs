@@ -6,13 +6,12 @@ use std::{
 
 #[derive(Parser)]
 struct Cli {
-    // #[clap]
     cmd: String,
     #[clap(short, long)]
     all: bool,
-		#[clap(short, long)]
-		time: bool,
-    // #[clap(parse(from_os_str))]
+    #[clap(short, long)]
+    time: bool,
+    #[clap(parse(from_os_str))]
     path: Option<path::PathBuf>,
 }
 
@@ -50,40 +49,62 @@ fn main() {
     };
 }
 
-// -t -> ordered by last-modified
 // -a -> hidden files
+// -t -> ordered by last-modified
 
-// implementation of the linux `ls` command.
+// implementation of the bash `ls` command.
 fn ls(path: path::PathBuf, all: bool, time: bool) -> Result<String, Box<dyn error::Error>> {
-    let metadata = fs::metadata(&path)?;
+    let metadata = match fs::metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(_) => match path.to_str() {
+            Some(path) => return Err(format!("No such file or directory: {}", path).into()),
+            None => return Err("Invalid path".into()),
+        },
+    };
 
+    // if the path is a file, return the file name
     if metadata.is_file() {
-        return Ok(path.file_name().unwrap().to_str().unwrap().to_owned());
+        return match path.file_name() {
+            Some(file_name) => match file_name.to_str() {
+                Some(file_name) => Ok(file_name.to_owned()),
+                None => return Err("Invalid file name".into()),
+            },
+            // this should never happen
+            None => return Err("Something went wrong..".into()),
+        };
     }
 
     let dir = fs::read_dir(&path)?;
 
-    let mut file_names: Vec<String> = Vec::new();
+    // get files
+    let mut files = dir
+        .filter_map(|file| file.ok())
+        .collect::<Vec<std::fs::DirEntry>>();
 
-    for file in dir {
-        let file_name = file.unwrap().file_name().into_string().unwrap();
-
-        if all || !file_name.starts_with(".") {
-            file_names.push(file_name);
-        }
+    // sort by last modified if time flag is set
+    if time {
+        // order by last modified first, so the vector is reversed
+        // TODO: is this the best way to do this?
+        files.sort_by_key(|file| {
+            let timestamp = if let Ok(metadata) = file.metadata().unwrap().modified() {
+                metadata
+            } else {
+                std::time::SystemTime::now()
+            };
+            std::cmp::Reverse(timestamp)
+        });
     }
 
-    // sort by date modified
-		// if time {
-		// 	file_names.sort_by()
-		// }
-    file_names.sort();
+    // get file names and filter out hidden files if all flag is not set
+    let file_names = files
+        .iter()
+        .map(|file| match file.file_name().to_str() {
+            Some(file_name) => file_name.to_owned(),
+            None => String::new(),
+        })
+        .filter(|file_name| !file_name.starts_with(".") || all)
+        .collect::<Vec<String>>()
+        .join(" ");
 
-    // create a String to return
-    let mut ls_result: String = "".to_owned();
-    for file_name in file_names {
-        ls_result = [ls_result, file_name].join(" ");
-    }
-
-    Ok(ls_result)
+    Ok(file_names)
 }
