@@ -1,62 +1,68 @@
-use clap::Parser;
+use clap::{Args, Parser, Subcommand};
 use std::{
-    error, fmt, fs,
-    path::{self, PathBuf},
+    error, fs,
+    path
 };
 
-#[derive(Parser)]
+#[derive(Debug, Parser)]
 struct Cli {
-    cmd: String,
-    #[clap(short, long)]
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Debug, Subcommand)]
+enum Commands {
+    /// List files in a directory
+    // #[command(arg_required_else_help = true)]
+    Ls(LsArgs),
+}
+
+#[derive(Debug, Args)]
+struct LsArgs {
+    #[arg(short, long)]
     all: bool,
-    #[clap(short, long)]
+    #[arg(short='A', long="almost-all")]
+    almost_all: bool,
+    #[arg(short, long)]
     time: bool,
-    #[clap(parse(from_os_str))]
-    path: Option<path::PathBuf>,
+    /// The path to the directory to list files from. Defaults to the current directory.
+    #[arg(default_value = ".", value_name = "PATH")]
+    path: path::PathBuf,
 }
 
-#[derive(Debug)]
-struct CliError(String);
+// #[derive(Debug)]
+// struct CliError(String);
 
-impl fmt::Display for CliError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Invalid Command: {}", self.0)
-    }
-}
+// impl fmt::Display for CliError {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         write!(f, "Invalid Command: {}", self.0)
+//     }
+// }
 
-impl error::Error for CliError {}
+// impl error::Error for CliError {}
 
-fn invalid_cmd(cmd: String) -> Result<String, Box<dyn error::Error>> {
-    Err(Box::new(CliError(cmd)))
-}
+// fn invalid_cmd(cmd: String) -> Result<String, Box<dyn error::Error>> {
+//     Err(Box::new(CliError(cmd)))
+// }
 
 fn main() {
     let args = Cli::parse();
-
-    let path = match args.path {
-        Some(path) => path,
-        None => PathBuf::from("."),
-    };
-
-    let result = match args.cmd.as_str() {
-        "ls" => ls(path, args.all, args.time),
-        _ => invalid_cmd(args.cmd),
-    };
-
-    match result {
-        Ok(val) => println!("{}", val),
-        Err(error) => println!("{}", error),
-    };
+    match args.command {
+        Commands::Ls(args) => match ls(args) {
+            Ok(val) => println!("{}", val),
+            Err(error) => println!("{}", error),
+        },
+    }
 }
 
 // -a -> hidden files
 // -t -> ordered by last-modified
 
 // implementation of the bash `ls` command.
-fn ls(path: path::PathBuf, all: bool, time: bool) -> Result<String, Box<dyn error::Error>> {
-    let metadata = match fs::metadata(&path) {
+fn ls(args: LsArgs) -> Result<String, Box<dyn error::Error>> {
+    let metadata = match fs::metadata(&args.path) {
         Ok(metadata) => metadata,
-        Err(_) => match path.to_str() {
+        Err(_) => match args.path.to_str() {
             Some(path) => return Err(format!("No such file or directory: {}", path).into()),
             None => return Err("Invalid path".into()),
         },
@@ -64,7 +70,7 @@ fn ls(path: path::PathBuf, all: bool, time: bool) -> Result<String, Box<dyn erro
 
     // if the path is a file, return the file name
     if metadata.is_file() {
-        return match path.file_name() {
+        return match args.path.file_name() {
             Some(file_name) => match file_name.to_str() {
                 Some(file_name) => Ok(file_name.to_owned()),
                 None => return Err("Invalid file name".into()),
@@ -74,7 +80,7 @@ fn ls(path: path::PathBuf, all: bool, time: bool) -> Result<String, Box<dyn erro
         };
     }
 
-    let dir = fs::read_dir(&path)?;
+    let dir = fs::read_dir(&args.path)?;
 
     // get files
     let mut files = dir
@@ -82,7 +88,7 @@ fn ls(path: path::PathBuf, all: bool, time: bool) -> Result<String, Box<dyn erro
         .collect::<Vec<std::fs::DirEntry>>();
 
     // sort by last modified if time flag is set
-    if time {
+    if args.time {
         // order by last modified first, so the vector is reversed
         // TODO: is this the best way to do this?
         files.sort_by_key(|file| {
@@ -102,7 +108,7 @@ fn ls(path: path::PathBuf, all: bool, time: bool) -> Result<String, Box<dyn erro
             Some(file_name) => file_name.to_owned(),
             None => String::new(),
         })
-        .filter(|file_name| !file_name.starts_with(".") || all)
+        .filter(|file_name| !file_name.starts_with(".") || args.all)
         .collect::<Vec<String>>()
         .join(" ");
 
